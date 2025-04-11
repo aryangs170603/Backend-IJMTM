@@ -1,36 +1,34 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import multer from 'multer';
-import { MongoClient, ObjectId } from 'mongodb';
+import { MongoClient, ObjectId, GridFSBucket } from 'mongodb';
 import { Readable } from 'stream';
 import cors from 'cors';
 
 dotenv.config();
 const app = express();
-
-// CORS setup
+app.use(express.json());
 app.use(cors({
   origin: ['http://localhost:4173', 'http://localhost:5173', 'https://fw9vjsxr-5173.inc1.devtunnels.ms'],
   credentials: true
 }));
 
-// MongoDB setup
 const mongoURI = process.env.MONGO_URI;
 const client = new MongoClient(mongoURI);
 let bucket;
 
-// Connect and initialize GridFS
+// Connect to MongoDB and initialize GridFS
 client.connect().then(() => {
   const db = client.db();
-  bucket = new db.constructor.GridFSBucket(db, {
+  bucket = new GridFSBucket(db, {
     bucketName: 'uploads'
   });
   console.log("✅ GridFSBucket initialized");
 }).catch(console.error);
 
-// Multer setup (store files in memory)
+// Multer config
 const storage = multer.memoryStorage();
-const upload = multer({ 
+const upload = multer({
   storage,
   limits: { fileSize: 20 * 1024 * 1024 }, // 20MB limit
   fileFilter: (req, file, cb) => {
@@ -41,10 +39,12 @@ const upload = multer({
   }
 });
 
-// Upload PDF route
+// Upload route
 app.post('/api/upload-paper', upload.single('pdf'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
+    if (!req.file) {
+      return res.status(400).json({ message: 'No file uploaded' });
+    }
 
     const { title, noAuthors, authors, documentType, abstract } = req.body;
     const fileStream = Readable.from(req.file.buffer);
@@ -74,7 +74,6 @@ app.post('/api/upload-paper', upload.single('pdf'), async (req, res) => {
         };
 
         await collection.insertOne(doc);
-
         res.status(201).json({ message: 'Submission successful', fileId: uploadStream.id });
       });
 
@@ -84,7 +83,7 @@ app.post('/api/upload-paper', upload.single('pdf'), async (req, res) => {
   }
 });
 
-// Serve uploaded PDF by fileId
+// Serve PDF file by ID
 app.get('/api/papers/:id', async (req, res) => {
   try {
     const fileId = new ObjectId(req.params.id);
